@@ -2,6 +2,7 @@
 
 import math
 from controller import Robot, DistanceSensor, Camera, InertialUnit, GPS as Gps, Compass, Gyro, Keyboard, Motor
+import sensorProcess
 
 def clamp(value, low, high):
     return low if value < low else high if value > high else value
@@ -25,7 +26,11 @@ FRONT_RIGHT_MOTOR = robot.getDevice("front right propeller")
 REAR_LEFT_MOTOR = robot.getDevice("rear left propeller")
 REAR_RIGHT_MOTOR = robot.getDevice("rear right propeller")
 MOTORS = [FRONT_LEFT_MOTOR, FRONT_RIGHT_MOTOR, REAR_LEFT_MOTOR, REAR_RIGHT_MOTOR]
+DISTANCE_SENSOR = robot.getDevice("distance sensor")
 # CAMERA_YAW_MOTOR = robot.getDevice("camera yaw") # Not used in this example.
+
+CAMERA_WIDTH = CAMERA.getWidth()
+CAMERA_HEIGHT = CAMERA.getHeight()
 
 Camera.enable(CAMERA, TIME_STEP)
 InertialUnit.enable(IMU, TIME_STEP)
@@ -33,6 +38,7 @@ Gps.enable(GPS, TIME_STEP)
 Compass.enable(COMPASS, TIME_STEP)
 Gyro.enable(GYRO, TIME_STEP)
 Keyboard.enable(KEYBOARD, TIME_STEP)
+DistanceSensor.enable(DISTANCE_SENSOR, TIME_STEP)
 
 # set propeller motors to velocity mode.
 for i in range(0, 4, 1):
@@ -69,6 +75,10 @@ target_altitude = 1.0 # The target altitude. Can be changed by the user.
 # Main loop
 while robot.step(TIME_STEP) != -1:
     TIME = robot.getTime()  # in seconds.
+
+    if TIME % 1.0 == 0: # process image every second
+        data = CAMERA.getImage()
+        sensorProcess.readImage(data, CAMERA_WIDTH, CAMERA_HEIGHT)
 
     # Retrieve robot position using the sensors.
     ROLL = IMU.getRollPitchYaw()[0] + math.pi / 2.0
@@ -132,4 +142,7 @@ while robot.step(TIME_STEP) != -1:
     Motor.setVelocity(FRONT_RIGHT_MOTOR, -FRONT_RIGHT_MOTOR_INPUT)
     Motor.setVelocity(REAR_LEFT_MOTOR, -REAR_LEFT_MOTOR_INPUT)
     Motor.setVelocity(REAR_RIGHT_MOTOR, REAR_RIGHT_MOTOR_INPUT)
+
+    if TIME % 100 == 0:
+        print("distance sensor value : ", str(DISTANCE_SENSOR.getValue()))
     
