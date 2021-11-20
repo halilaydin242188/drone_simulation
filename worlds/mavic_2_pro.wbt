@@ -13,8 +13,8 @@ WorldInfo {
   coordinateSystem "NUE"
 }
 Viewpoint {
-  orientation 0.07050665473376751 -0.9955409361549733 -0.06266622757062013 4.81348648259329
-  position 3.097238269380304 0.6132726075362769 0.5611797778962901
+  orientation 0.0775368676700659 -0.9946951218969761 -0.06759917622482156 4.83264898259423
+  position 7.574255795208735 1.4341691757932955 1.3040661582567619
   near 0.2
   follow "Mavic 2 PRO"
   followSmoothness 0.2
@@ -136,10 +136,58 @@ Forest {
   minRadius 3
 }
 Mavic2Pro {
-  translation 0 0.1 0
+  translation -1.87629e-08 0.09 -1.76025e-14
   rotation 0 -0.7071067811865475 -0.7071067811865475 -3.14159
   bodySlot [
     DistanceSensor {
+      rotation -0.5773502691890485 -0.5773492691885823 0.5773512691895147 -2.094395307179586
+      name "ds_down"
+      lookupTable [
+        0 0 0
+        1 1000 0
+      ]
+      type "sonar"
+      aperture 1.5709
+    }
+    DistanceSensor {
+      translation 0 0 -0.01
+      rotation 0 0 1 1.5708
+      name "ds_left"
+      lookupTable [
+        0 0 0
+        1 1000 0
+      ]
+      type "sonar"
+      aperture 1.5709
+    }
+    DistanceSensor {
+      name "ds_front"
+      lookupTable [
+        0 0 0
+        1 1000 0
+      ]
+      type "sonar"
+      aperture 1.5709
+    }
+    DistanceSensor {
+      rotation 0 0 1 -1.5707953071795862
+      name "ds_right"
+      lookupTable [
+        0 0 0
+        1 1000 0
+      ]
+      type "sonar"
+      aperture 1.5709
+    }
+    DistanceSensor {
+      rotation 1.125079999996903e-14 -2.346409999993541e-06 0.9999999999972473 3.14159
+      name "ds_back"
+      lookupTable [
+        0 0 0
+        1 1000 0
+      ]
+      type "sonar"
+      aperture 1.5709
     }
   ]
   cameraSlot [

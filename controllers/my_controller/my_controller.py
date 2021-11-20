@@ -25,9 +25,14 @@ FRONT_LEFT_MOTOR = robot.getDevice("front left propeller")
 FRONT_RIGHT_MOTOR = robot.getDevice("front right propeller")
 REAR_LEFT_MOTOR = robot.getDevice("rear left propeller")
 REAR_RIGHT_MOTOR = robot.getDevice("rear right propeller")
+# CAMERA_YAW_MOTOR = robot.getDevice("camera yaw")
+DS_FRONT = robot.getDevice("ds_front")
+DS_BACK = robot.getDevice("ds_back")
+DS_RIGHT = robot.getDevice("ds_right")
+DS_LEFT = robot.getDevice("ds_left")
+DS_DOWN = robot.getDevice("ds_down")
+
 MOTORS = [FRONT_LEFT_MOTOR, FRONT_RIGHT_MOTOR, REAR_LEFT_MOTOR, REAR_RIGHT_MOTOR]
-DISTANCE_SENSOR = robot.getDevice("distance sensor")
-# CAMERA_YAW_MOTOR = robot.getDevice("camera yaw") # Not used in this example.
 
 CAMERA_WIDTH = CAMERA.getWidth()
 CAMERA_HEIGHT = CAMERA.getHeight()
@@ -38,7 +43,11 @@ Gps.enable(GPS, TIME_STEP)
 Compass.enable(COMPASS, TIME_STEP)
 Gyro.enable(GYRO, TIME_STEP)
 Keyboard.enable(KEYBOARD, TIME_STEP)
-DistanceSensor.enable(DISTANCE_SENSOR, TIME_STEP)
+DistanceSensor.enable(DS_FRONT, TIME_STEP)
+DistanceSensor.enable(DS_BACK, TIME_STEP)
+DistanceSensor.enable(DS_RIGHT, TIME_STEP)
+DistanceSensor.enable(DS_LEFT, TIME_STEP)
+DistanceSensor.enable(DS_DOWN, TIME_STEP)
 
 # set propeller motors to velocity mode.
 for i in range(0, 4, 1):
@@ -102,6 +111,7 @@ while robot.step(TIME_STEP) != -1:
     yaw_disturbance = 0.0
     
     key = KEYBOARD.getKey()
+
     while key > 0 :
         if key == KEYBOARD.UP:
             pitch_disturbance = 2.0
@@ -143,6 +153,12 @@ while robot.step(TIME_STEP) != -1:
     Motor.setVelocity(REAR_LEFT_MOTOR, -REAR_LEFT_MOTOR_INPUT)
     Motor.setVelocity(REAR_RIGHT_MOTOR, REAR_RIGHT_MOTOR_INPUT)
 
-    if TIME % 100 == 0:
-        print("distance sensor value : ", str(DISTANCE_SENSOR.getValue()))
+    
+    if TIME % 2.0 == 0:
+        print("DS_FRONT value : ", str(DS_FRONT.getValue()))
+        print("DS_BACK : ", str(DS_BACK.getValue()))
+        print("DS_RIGHT value : ", str(DS_RIGHT.getValue()))
+        print("DS_LEFT value : ", str(DS_LEFT.getValue()))
+        print("DS_DOWN value : ", str(DS_DOWN.getValue()))
+    
     
