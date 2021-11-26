@@ -1,10 +1,14 @@
 
 from controller import Robot, DistanceSensor, Camera, InertialUnit, GPS as Gps, Compass, Gyro, Keyboard, Motor
+import cv2 as cv
+import numpy as np
+
+qrDetector = cv.QRCodeDetector()
 
 class Drone_controller:
     def __init__(self, robot):
         self.robot = robot
-        # Get and enable devices.
+        # Get devices.
         self.TIME_STEP = int(self.robot.getBasicTimeStep())
         self.CAMERA = self.robot.getDevice("camera")
         self.FRONT_LEFT_LED = self.robot.getDevice("front left led")
@@ -20,7 +24,7 @@ class Drone_controller:
         self.FRONT_RIGHT_MOTOR = self.robot.getDevice("front right propeller")
         self.REAR_LEFT_MOTOR = self.robot.getDevice("rear left propeller")
         self.REAR_RIGHT_MOTOR = self.robot.getDevice("rear right propeller")
-        # CAMERA_YAW_MOTOR = robot.getDevice("camera yaw")
+        self.CAMERA_YAW_MOTOR = robot.getDevice("camera yaw")
         self.DS_FRONT = self.robot.getDevice("ds_front")
         self.DS_BACK = self.robot.getDevice("ds_back")
         self.DS_RIGHT = self.robot.getDevice("ds_right")
@@ -32,18 +36,43 @@ class Drone_controller:
         self.CAMERA_WIDTH = self.CAMERA.getWidth()
         self.CAMERA_HEIGHT = self.CAMERA.getHeight()
 
-        self.K_VERTICAL_THRUST = 68.5  # with this thrust, the drone lifts.
+        self.K_VERTICAL_THRUST = 69.14  # with this thrust, the drone lifts.
         self.K_VERTICAL_OFFSET = 0.6;  # Vertical offset where the robot actually targets to stabilize itself.
         self.K_VERTICAL_P = 3.0        # P constant of the vertical PID.
         self.K_ROLL_P = 50.0           # P constant of the roll PID.
         self.K_PITCH_P = 30.0          # P constant of the pitch PID.
 
-        self.target_altitude = 1.5 # The target altitude. Can be changed by the user.
+        #self.target_altitude = 1.5 # The target altitude. Can be changed by the user.
+        self.vertical_input = 0.0
 
         # Transform the keyboard input to disturbances on the stabilization algorithm.
         self.roll_disturbance = 0.0
         self.pitch_disturbance = 0.0
         self.yaw_disturbance = 0.0
+
+        self.camera_pitch_value = 0.0
+        self.camera_yaw_value = 0.0
+
+        self.willCrash = 0
+        self.shouldUp = 0
+        self.shouldForward = 5
+        self.shouldBackward = 5
+        self.shouldRight = 0
+        self.shouldLeft = 0
+
+        self.w_factor = 5
+        self.s_factor = 5
+        self.d_factor = 5
+        self.a_factor = 5
+
+        self.posX = self.CAMERA_WIDTH / 2
+        self.posY = self.CAMERA_HEIGHT / 2
+        self.destX = 0
+        self.destY = 0
+
+        self.img = None
+        self.retval = False
+        self.points = 0
     
     def clamp(self, value, low, high):
         return low if value < low else high if value > high else value
@@ -57,48 +86,68 @@ class Drone_controller:
         if self.pitch_disturbance > 0:
                 if self.pitch_disturbance <= 0.2:
                     self.pitch_disturbance = 0
-                self.pitch_disturbance -= 0.05
+                else:
+                    self.pitch_disturbance -= 0.05
         elif self.pitch_disturbance < 0:
             if self.pitch_disturbance >= -0.2:
                 self.pitch_disturbance = 0
-            self.pitch_disturbance += 0.05
+            else:
+                self.pitch_disturbance += 0.05
 
     def roll_normalize(self):
         if self.roll_disturbance < 0:
                 if self.roll_disturbance >= -1.0:
                     self.roll_disturbance = 0
-                self.roll_disturbance += 0.05
+                else:
+                    self.roll_disturbance += 0.05
         elif self.roll_disturbance > 0:
             if self.roll_disturbance <= 1.0:
                 self.roll_disturbance = 0
-            self.roll_disturbance -= 0.05
+            else:
+                self.roll_disturbance -= 0.05
 
-    def key_w(self):
-        if self.IMU.getRollPitchYaw()[1] > -0.1: 
-            self.pitch_disturbance += 0.05
+    def vertical_normalize(self):
+        if self.vertical_input > 0:
+            if self.vertical_input <= 0.2:
+                self.vertical_input = 0.0
+            else:
+                self.vertical_input -= 0.05
+        elif self.vertical_input < 0.0:
+            if self.vertical_input >= -0.2:
+                self.vertical_input = 0.0
+            else:
+                self.vertical_input += 0.05
+
+    def key_w(self, w_factor=5, p_factor=-0.1):
+        if self.IMU.getRollPitchYaw()[1] > p_factor: 
+            self.pitch_disturbance += 0.01 * w_factor
 
         self.roll_normalize()
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
-    def key_s(self):
-        if self.IMU.getRollPitchYaw()[1] < 0.1: 
-            self.pitch_disturbance -= 0.05
+    def key_s(self, s_factor=5, p_factor=0.1):
+        if self.IMU.getRollPitchYaw()[1] < p_factor: 
+            self.pitch_disturbance -= 0.01 * s_factor
 
         self.roll_normalize()
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
-    def key_d(self):
-        if self.IMU.getRollPitchYaw()[0] < -1.47:
-            self.roll_disturbance -= 0.05
+    def key_d(self, d_factor=5, r_factor=-1.47):
+        if self.IMU.getRollPitchYaw()[0] < r_factor:
+            self.roll_disturbance -= 0.01 * d_factor
 
         self.pitch_normalize()
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
-    def key_a(self):
-        if self.IMU.getRollPitchYaw()[0] > -1.67:
-            self.roll_disturbance += 0.05
+    def key_a(self, a_factor=5, r_factor=-1.67):
+        if self.IMU.getRollPitchYaw()[0] > r_factor:
+            self.roll_disturbance += 0.01 * a_factor
 
         self.pitch_normalize()
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
     def key_e(self):
@@ -108,6 +157,7 @@ class Drone_controller:
         if self.IMU.getRollPitchYaw()[0] < -1.47:
             self.roll_disturbance -= 0.05
 
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
     def key_q(self):
@@ -117,66 +167,122 @@ class Drone_controller:
         if self.IMU.getRollPitchYaw()[0] > -1.67:
             self.roll_disturbance += 0.05
 
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
     def key_right(self):
         if self.yaw_disturbance < 1.3:
             self.yaw_disturbance += 0.05
+        self.vertical_normalize()
 
     def key_left(self):
         if self.yaw_disturbance > -1.3:
             self.yaw_disturbance -= 0.05
+        self.vertical_normalize()
 
-    def key_up(self):
-        self.target_altitude += 0.01
+    def key_up(self, up_factor=5):
+        self.vertical_input += 0.005 * up_factor
         self.yaw_disturbance = 0
 
-    def key_down(self):
-        self.target_altitude -= 0.01
+    def key_down(self, d_factor=5):
+        self.vertical_input -= 0.005 * d_factor
+        self.yaw_disturbance = 0
+
+    def key_u(self):
+        if self.camera_pitch_value < 1.65:
+            self.camera_pitch_value += 0.025
+
+        self.vertical_normalize()
+        self.yaw_disturbance = 0
+
+    def key_j(self):
+        if self.camera_pitch_value > -0.45:
+            self.camera_pitch_value -= 0.025
+
+        self.vertical_normalize()
+        self.yaw_disturbance = 0
+
+    def key_k(self):
+        if self.camera_yaw_value < 1.65:
+            self.camera_yaw_value += 0.025
+
+        self.vertical_normalize()
+        self.yaw_disturbance = 0
+
+    def key_h(self):
+        if self.camera_yaw_value > -0.4:
+            self.camera_yaw_value -= 0.025
+
+        self.vertical_normalize()
         self.yaw_disturbance = 0
 
     def keyboard_control(self, KEY):
+        if self.willCrash == 0:
+            if KEY > 0 :
+                if KEY == ord('W'): # W
+                    self.key_w()
 
-        if KEY > 0 :
-            if KEY == ord('W'): # W
-                self.key_w()
+                elif KEY == ord('S'): # S
+                    self.key_s()
 
-            elif KEY == ord('S'): # S
-                self.key_s()
+                elif KEY == ord('D'): # D
+                    self.key_d()
 
-            elif KEY == ord('D'): # D
-                self.key_d()
+                elif KEY == ord('A'): # A
+                    self.key_a()
 
-            elif KEY == ord('A'): # A
-                self.key_a()
+                elif KEY == ord('E'): # E
+                    self.key_e()
 
-            elif KEY == ord('E'): # E
-                self.key_e()
+                elif KEY == ord('Q'): # Q
+                    self.key_q()
 
-            elif KEY == ord('Q'): # Q
-                self.key_q()
+                elif KEY == self.KEYBOARD.RIGHT: # RIGHT
+                    self.key_right()
 
-            elif KEY == self.KEYBOARD.RIGHT: # RIGHT
-                self.key_right()
+                elif KEY == self.KEYBOARD.LEFT: # LEFT
+                    self.key_left()
 
-            elif KEY == self.KEYBOARD.LEFT: # LEFT
-                self.key_left()
+                elif KEY == self.KEYBOARD.UP: # UP
+                    self.key_up()
+    
+                elif KEY == self.KEYBOARD.DOWN: # DOWN
+                    self.key_down()
 
-            elif KEY == self.KEYBOARD.UP: # UP
-                self.key_up()
+                elif KEY == ord('U'): # U
+                    self.key_u()
+                
+                elif KEY == ord('J'): # J
+                    self.key_j()
 
-            elif KEY == self.KEYBOARD.DOWN: # DOWN
-                self.key_down()
+                elif KEY == ord('K'): # K
+                    self.key_k()
+                
+                elif KEY == ord('H'): # H
+                    self.key_h()
 
-            else: # other key combinations we didn't declare is being used
+                else: # other key combinations we didn't declare is being used
+                    self.pitch_normalize()
+                    self.roll_normalize()
+                    self.vertical_normalize()
+                    self.yaw_disturbance = 0
+
+            else: # if no key is being pressed
                 self.pitch_normalize()
                 self.roll_normalize()
+                self.vertical_normalize()
                 self.yaw_disturbance = 0
-
-        else: # if no key is being pressed
-            self.pitch_normalize()
-            self.roll_normalize()
-            self.yaw_disturbance = 0
+        else :
+            if self.shouldForward:
+                self.key_w(self.w_factor)
+            if self.shouldBackward:
+                self.key_s(self.s_factor)
+            if self.shouldRight:
+                self.key_d(self.d_factor)
+            if self.shouldLeft:
+                self.key_a(self.a_factor)
+            if self.shouldUp:
+                self.key_up(self.up_factor)
 
     def blink_leds(self, TIME):
         self.LED_STATE = int(TIME) % 2
@@ -189,8 +295,8 @@ class Drone_controller:
         self.ROLL_INPUT = self.K_ROLL_P * self.clamp(ROLL, -1.0, 1.0) + ROLL_ACCELERATION + self.roll_disturbance
         self.PITCH_INPUT = self.K_PITCH_P * ( self.clamp(PITCH, -1.0, 1.0) - 0.005) - PITCH_ACCELERATION + self.pitch_disturbance
         self.YAW_INPUT = self.yaw_disturbance
-        self.CLAMPED_DIFFERENCE_ALTITUDE = self.clamp(self.target_altitude - ALTITUDE + self.K_VERTICAL_OFFSET, -1.0, 1.0)
-        self.VERTICAL_INPUT = self.K_VERTICAL_P * pow(self.CLAMPED_DIFFERENCE_ALTITUDE, 3.0)
+        #self.CLAMPED_DIFFERENCE_ALTITUDE = self.clamp(self.target_altitude - ALTITUDE + self.K_VERTICAL_OFFSET, -1.0, 1.0)
+        self.VERTICAL_INPUT = self.vertical_input
 
         # Actuate the motors taking into consideration all the computed inputs.
         self.FRONT_LEFT_MOTOR_INPUT = self.K_VERTICAL_THRUST + self.VERTICAL_INPUT - self.ROLL_INPUT - self.PITCH_INPUT + self.YAW_INPUT
@@ -202,6 +308,9 @@ class Drone_controller:
         Motor.setVelocity(self.FRONT_RIGHT_MOTOR, -self.FRONT_RIGHT_MOTOR_INPUT)
         Motor.setVelocity(self.REAR_LEFT_MOTOR, -self.REAR_LEFT_MOTOR_INPUT)
         Motor.setVelocity(self.REAR_RIGHT_MOTOR, self.REAR_RIGHT_MOTOR_INPUT)
+
+        self.CAMERA_PITCH_MOTOR.setPosition(self.camera_pitch_value)
+        self.CAMERA_YAW_MOTOR.setPosition(self.camera_yaw_value)
 
     def enable_all(self):
         Camera.enable(self.CAMERA, self.TIME_STEP)
@@ -215,3 +324,132 @@ class Drone_controller:
         DistanceSensor.enable(self.DS_RIGHT, self.TIME_STEP)
         DistanceSensor.enable(self.DS_LEFT, self.TIME_STEP)
         DistanceSensor.enable(self.DS_DOWN, self.TIME_STEP)
+
+    def checkCrash(self, FV, BV, RV, LV, DV):
+        if FV < 1000.0 or  BV < 1000.0 or RV < 1000.0 or LV < 1000.0 or DV < 1000.0 :
+            if self.DS_FRONT.getValue() < 1000.0 :
+                self.willCrash = 1
+                self.shouldBackward = 1
+
+                if self.DS_FRONT.getValue() < 300.0 :
+                    self.s_factor = 13
+                elif self.DS_FRONT.getValue() < 500.0 :
+                    self.s_factor = 11
+                elif self.DS_FRONT.getValue() < 750.0 : 
+                    self.s_factor = 9
+
+                self.s_factor = 7
+            else:
+                self.shouldBackward = 0
+                self.s_factor = 5
+
+            if self.DS_BACK.getValue() < 1000.0 :
+                self.willCrash = 1
+                self.shouldForward = 1
+
+                if self.DS_BACK.getValue() < 300.0 :
+                    self.w_factor = 13
+                if self.DS_BACK.getValue() < 500.0 :
+                    self.w_factor = 11
+                if self.DS_BACK.getValue() < 750.0 : 
+                    self.w_factor = 9
+
+                self.w_factor = 7
+            else:
+                self.shouldForward = 0
+                self.w_factor = 5
+
+            if self.DS_LEFT.getValue() < 1000.0 :
+                self.willCrash = 1
+                self.shouldRight = 1
+
+                if self.DS_LEFT.getValue() < 300.0 :
+                    self.d_factor = 13
+                if self.DS_LEFT.getValue() < 500.0 :
+                    self.d_factor = 11
+                if self.DS_LEFT.getValue() < 750.0 : 
+                    self.d_factor = 9
+
+                self.d_factor = 7
+            else:
+                self.shouldRight = 0
+                self.d_factor = 5
+
+            if self.DS_RIGHT.getValue() < 1000.0 :
+                self.willCrash = 1
+                self.shouldLeft = 1
+
+                if self.DS_RIGHT.getValue() < 300.0 :
+                    self.a_factor = 13
+                if self.DS_RIGHT.getValue() < 500.0 :
+                    self.a_factor = 11
+                if self.DS_RIGHT.getValue() < 750.0 : 
+                    self.a_factor = 9
+
+                self.d_factor = 7 
+            else:
+                self.shouldLeft = 0
+                self.a_factor = 5
+
+            if self.DS_DOWN.getValue() < 1000.0 :
+                self.willCrash = 1
+                self.shouldUp = 1
+
+                if self.DS_DOWN.getValue() < 300.0 :
+                    self.up_factor = 13
+                if self.DS_DOWN.getValue() < 500.0 :
+                    self.up_factor = 11
+                if self.DS_DOWN.getValue() < 750.0 : 
+                    self.up_factor = 9
+
+                self.up_factor = 7 
+            else:
+                self.shouldUp = 0
+                self.up_factor = 5
+
+        else:
+            self.willCrash = 0
+            self.shouldBackward = 0
+            self.shouldForward = 0
+            self.shouldRight = 0
+            self.shouldLeft = 0
+            self.shouldUp = 0
+
+    def getImage(self):
+        data = self.CAMERA.getImage()
+        img = np.fromstring( data, dtype='uint8').reshape((self.CAMERA_HEIGHT, self.CAMERA_WIDTH, 4)) # covert image buffer to uint8 array
+        #image = np.frombuffer(imgData, np.uint8).reshape((camHeight, camWidth, 4))
+        self.img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        self.retval, self.points = qrDetector.detect(self.img)
+
+    def landingSupport(self):
+        if self.retval:
+            x1 = (self.points[0, 0, 0] + self.points[0, 1, 0]) / 2
+            y1 = (self.points[0, 0, 1] + self.points[0, 1, 1]) / 2
+            x2 = (self.points[0, 2, 0] + self.points[0, 3, 0]) / 2
+            y2 = (self.points[0, 2, 1] + self.points[0, 3, 1]) / 2
+
+            self.destX = (x1 + x2) / 2
+            self.destY = (y1 + y2) / 2
+
+            if (self.destX > self.posX - 35 and self.destX < self.posX + 35) and (self.destY > self.posY - 35 and self.destY < self.posY + 35 ):
+                if self.pitch_disturbance != 0 :
+                    self.pitch_normalize()
+                elif self.roll_disturbance != 0 :
+                    self.roll_normalize()
+                else:
+                    self.key_down(d_factor=1)
+        
+            elif self.destX < self.posX - 50:
+                self.key_a(a_factor=1, r_factor=-1.6)
+            
+            elif self.destX > self.posX + 50:
+                self.key_d(d_factor=1, r_factor=-1.54)
+
+            elif self.destY < self.posY - 40:
+                self.key_w(w_factor=1, p_factor=-0.05)
+
+            elif self.destY > self.posY + 40:
+                self.key_s(s_factor=1, p_factor=0.05)
+
+                

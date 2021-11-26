@@ -30,6 +30,20 @@ Floor {
   appearance SandyGround {
   }
 }
+AdvertisingBoard {
+  translation -7.11 0.189999 0.92
+  rotation 1 0 0 -1.5707953071795862
+  frontTexture [
+    "C:/Users/halil/my_files/drone_simulation/qr1.jpg"
+  ]
+  displayWidth 1
+  displayHeight 1
+}
+Panel {
+  translation -11.52 0 0
+  rotation 0 1 0 1.5708
+  size 3 3 0.1
+}
 Road {
   translation -43.8 0.01 -9.2
   rotation 0 1 0 1.1781
