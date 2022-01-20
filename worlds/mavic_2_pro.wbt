@@ -13,8 +13,8 @@ WorldInfo {
   coordinateSystem "NUE"
 }
 Viewpoint {
-  orientation 0.0775368676700659 -0.9946951218969761 -0.06759917622482156 4.83264898259423
-  position 7.574255795208735 1.4341691757932955 1.3040661582567619
+  orientation 0.1571322551049566 -0.9775164133124283 -0.1406098009046198 4.795231080030554
+  position 9.512301790284218 3.703785268314692 1.0706332129406755
   near 0.2
   follow "Mavic 2 PRO"
   followSmoothness 0.2
@@ -36,13 +36,13 @@ AdvertisingBoard {
   frontTexture [
     "C:/Users/halil/my_files/drone_simulation/qr1.jpg"
   ]
-  displayWidth 1
-  displayHeight 1
+  displayWidth 1.5
+  displayHeight 1.5
 }
 Panel {
-  translation -11.52 0 0
-  rotation 0 1 0 1.5708
-  size 3 3 0.1
+  translation -18.9584 0 -7.19276
+  rotation 0 -1 0 -1.3090053071795866
+  size 5 7 0.1
 }
 Road {
   translation -43.8 0.01 -9.2
@@ -105,10 +105,6 @@ Pine {
   name "pine tree(1)"
 }
 Pine {
-  translation -22.0129 0 -6.20205
-  name "pine tree(3)"
-}
-Pine {
   translation -10.6926 0 25.1339
   name "pine tree(4)"
 }
@@ -150,15 +146,17 @@ Forest {
   minRadius 3
 }
 Mavic2Pro {
-  translation -1.87629e-08 0.09 -1.76025e-14
+  translation -5.62653e-08 0.07 -5.26855e-14
   rotation 0 -0.7071067811865475 -0.7071067811865475 -3.14159
   bodySlot [
+    Accelerometer {
+    }
     DistanceSensor {
       rotation -0.5773502691890485 -0.5773492691885823 0.5773512691895147 -2.094395307179586
       name "ds_down"
       lookupTable [
         0 0 0
-        1 1000 0
+        2 1000 0
       ]
       type "sonar"
       aperture 1.5709
@@ -169,7 +167,7 @@ Mavic2Pro {
       name "ds_left"
       lookupTable [
         0 0 0
-        1 1000 0
+        2 1000 0
       ]
       type "sonar"
       aperture 1.5709
@@ -178,7 +176,7 @@ Mavic2Pro {
       name "ds_front"
       lookupTable [
         0 0 0
-        1 1000 0
+        2 1000 0
       ]
       type "sonar"
       aperture 1.5709
@@ -188,7 +186,7 @@ Mavic2Pro {
       name "ds_right"
       lookupTable [
         0 0 0
-        1 1000 0
+        2 1000 0
       ]
       type "sonar"
       aperture 1.5709
@@ -198,7 +196,7 @@ Mavic2Pro {
       name "ds_back"
       lookupTable [
         0 0 0
-        1 1000 0
+        2 1000 0
       ]
       type "sonar"
       aperture 1.5709

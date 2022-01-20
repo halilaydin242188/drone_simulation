@@ -1,12 +1,12 @@
 
-from controller import Robot, DistanceSensor, Camera, InertialUnit, GPS as Gps, Compass, Gyro, Keyboard, Motor
+from controller import Robot, DistanceSensor, Camera, InertialUnit, GPS as Gps, Compass, Gyro, Keyboard, Motor, Accelerometer
 import cv2 as cv
 import numpy as np
 
-qrDetector = cv.QRCodeDetector()
+qrDetector = cv.QRCodeDetector() # create a opencv qr detector object
 
 class Drone_controller:
-    def __init__(self, robot):
+    def __init__(self, robot): # declare necessary variables when object is created 
         self.robot = robot
         # Get devices.
         self.TIME_STEP = int(self.robot.getBasicTimeStep())
@@ -30,6 +30,7 @@ class Drone_controller:
         self.DS_RIGHT = self.robot.getDevice("ds_right")
         self.DS_LEFT = self.robot.getDevice("ds_left")
         self.DS_DOWN = self.robot.getDevice("ds_down")
+        self.ACCELEROMETER = self.robot.getDevice("accelerometer")
 
         self.MOTORS = [self.FRONT_LEFT_MOTOR, self.FRONT_RIGHT_MOTOR, self.REAR_LEFT_MOTOR, self.REAR_RIGHT_MOTOR]
 
@@ -70,15 +71,25 @@ class Drone_controller:
         self.destX = 0
         self.destY = 0
 
-        self.img = None
-        self.retval = False
-        self.points = 0
+        self.img = None # image
+        self.retval = False # image is read from drone's camera
+        self.points = 0 # 4 points of the qr code roi found in image
+
+        self.normalizeTime = 0
+        self.timeCalculated = False
+
+        self.imuControl = False # When True limit the velocity according to imu sensor
+        self.dsControl = False # When True activate distance sensor algorithms
+
+        self.lastChanged = { # to prevent holding down
+            "key_z" : 0,
+            "key_c" : 0
+        }
     
     def clamp(self, value, low, high):
         return low if value < low else high if value > high else value
 
-    def camera_stabilize(self, ROLL_ACCELERATION, PITCH_ACCELERATION):
-        # Stabilize the Camera by actuating the camera motors according to the gyro feedback.
+    def camera_stabilize(self, ROLL_ACCELERATION, PITCH_ACCELERATION): # Stabilize the Camera by actuating the camera motors according to the gyro feedback.
         self.CAMERA_ROLL_MOTOR.setPosition(-0.115 * ROLL_ACCELERATION)
         self.CAMERA_PITCH_MOTOR.setPosition(-0.1 * PITCH_ACCELERATION)
 
@@ -119,7 +130,10 @@ class Drone_controller:
                 self.vertical_input += 0.05
 
     def key_w(self, w_factor=5, p_factor=-0.1):
-        if self.IMU.getRollPitchYaw()[1] > p_factor: 
+        if self.imuControl:
+            if self.IMU.getRollPitchYaw()[1] > p_factor: 
+                self.pitch_disturbance += 0.01 * w_factor
+        else:
             self.pitch_disturbance += 0.01 * w_factor
 
         self.roll_normalize()
@@ -127,7 +141,10 @@ class Drone_controller:
         self.yaw_disturbance = 0
 
     def key_s(self, s_factor=5, p_factor=0.1):
-        if self.IMU.getRollPitchYaw()[1] < p_factor: 
+        if self.imuControl:
+            if self.IMU.getRollPitchYaw()[1] < p_factor: 
+                self.pitch_disturbance -= 0.01 * s_factor
+        else:
             self.pitch_disturbance -= 0.01 * s_factor
 
         self.roll_normalize()
@@ -135,7 +152,10 @@ class Drone_controller:
         self.yaw_disturbance = 0
 
     def key_d(self, d_factor=5, r_factor=-1.47):
-        if self.IMU.getRollPitchYaw()[0] < r_factor:
+        if self.imuControl:
+            if self.IMU.getRollPitchYaw()[0] < r_factor:
+                self.roll_disturbance -= 0.01 * d_factor
+        else:
             self.roll_disturbance -= 0.01 * d_factor
 
         self.pitch_normalize()
@@ -143,7 +163,10 @@ class Drone_controller:
         self.yaw_disturbance = 0
 
     def key_a(self, a_factor=5, r_factor=-1.67):
-        if self.IMU.getRollPitchYaw()[0] > r_factor:
+        if self.imuControl:
+            if self.IMU.getRollPitchYaw()[0] > r_factor:
+                self.roll_disturbance += 0.01 * a_factor
+        else:
             self.roll_disturbance += 0.01 * a_factor
 
         self.pitch_normalize()
@@ -151,20 +174,28 @@ class Drone_controller:
         self.yaw_disturbance = 0
 
     def key_e(self):
-        if self.IMU.getRollPitchYaw()[1] > -0.1: 
-            self.pitch_disturbance += 0.05
+        if self.imuControl:
+            if self.IMU.getRollPitchYaw()[1] > -0.1: 
+                self.pitch_disturbance += 0.05
 
-        if self.IMU.getRollPitchYaw()[0] < -1.47:
+            if self.IMU.getRollPitchYaw()[0] < -1.47:
+                self.roll_disturbance -= 0.05
+        else:
+            self.pitch_disturbance += 0.05
             self.roll_disturbance -= 0.05
 
         self.vertical_normalize()
         self.yaw_disturbance = 0
 
     def key_q(self):
-        if self.IMU.getRollPitchYaw()[1] > -0.1: 
-            self.pitch_disturbance += 0.05
+        if self.imuControl:
+            if self.IMU.getRollPitchYaw()[1] > -0.1: 
+                self.pitch_disturbance += 0.05
 
-        if self.IMU.getRollPitchYaw()[0] > -1.67:
+            if self.IMU.getRollPitchYaw()[0] > -1.67:
+                self.roll_disturbance += 0.05
+        else:
+            self.pitch_disturbance += 0.05
             self.roll_disturbance += 0.05
 
         self.vertical_normalize()
@@ -216,7 +247,25 @@ class Drone_controller:
         self.vertical_normalize()
         self.yaw_disturbance = 0
 
-    def keyboard_control(self, KEY):
+    def key_z(self, TIME):
+        if TIME - self.lastChanged["key_z"] > 0.20:
+            self.imuControl = not self.imuControl
+            self.lastChanged["key_z"] = TIME
+            if self.imuControl:
+                print("- - - - - -\nImu Control Has Been Activated...")
+            else:
+                print("- - - - - -\nImu Control Has Been Deactivated...")
+  
+    def key_c(self, TIME):
+        if TIME - self.lastChanged["key_c"] > 0.20:
+            self.dsControl = not self.dsControl
+            self.lastChanged["key_c"] = TIME
+            if self.dsControl:
+                print("- - - - - -\nDistance Sensors Has Been Activated...")
+            else:
+                print("- - - - - -\nDistance Sensors Has Been Deactivated...")
+
+    def keyboard_control(self, KEY, TIME):
         if self.willCrash == 0:
             if KEY > 0 :
                 if KEY == ord('W'): # W
@@ -261,6 +310,12 @@ class Drone_controller:
                 elif KEY == ord('H'): # H
                     self.key_h()
 
+                elif KEY == ord('Z'): # Z
+                    self.key_z(TIME)
+                
+                elif KEY == ord('C'): # X
+                    self.key_c(TIME)
+
                 else: # other key combinations we didn't declare is being used
                     self.pitch_normalize()
                     self.roll_normalize()
@@ -297,7 +352,7 @@ class Drone_controller:
         self.YAW_INPUT = self.yaw_disturbance
         #self.CLAMPED_DIFFERENCE_ALTITUDE = self.clamp(self.target_altitude - ALTITUDE + self.K_VERTICAL_OFFSET, -1.0, 1.0)
         self.VERTICAL_INPUT = self.vertical_input
-
+        
         # Actuate the motors taking into consideration all the computed inputs.
         self.FRONT_LEFT_MOTOR_INPUT = self.K_VERTICAL_THRUST + self.VERTICAL_INPUT - self.ROLL_INPUT - self.PITCH_INPUT + self.YAW_INPUT
         self.FRONT_RIGHT_MOTOR_INPUT  = self.K_VERTICAL_THRUST + self.VERTICAL_INPUT + self.ROLL_INPUT - self.PITCH_INPUT - self.YAW_INPUT
@@ -324,6 +379,7 @@ class Drone_controller:
         DistanceSensor.enable(self.DS_RIGHT, self.TIME_STEP)
         DistanceSensor.enable(self.DS_LEFT, self.TIME_STEP)
         DistanceSensor.enable(self.DS_DOWN, self.TIME_STEP)
+        Accelerometer.enable(self.ACCELEROMETER, self.TIME_STEP)
 
     def checkCrash(self, FV, BV, RV, LV, DV):
         if FV < 1000.0 or  BV < 1000.0 or RV < 1000.0 or LV < 1000.0 or DV < 1000.0 :
@@ -422,7 +478,7 @@ class Drone_controller:
         self.img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         self.retval, self.points = qrDetector.detect(self.img)
 
-    def landingSupport(self):
+    def landingSupport(self, TIME): # otonom landing using kamera and opencv qr, finds the center of qr in img and tries to centerize the qr
         if self.retval:
             x1 = (self.points[0, 0, 0] + self.points[0, 1, 0]) / 2
             y1 = (self.points[0, 0, 1] + self.points[0, 1, 1]) / 2
@@ -433,16 +489,20 @@ class Drone_controller:
             self.destY = (y1 + y2) / 2
 
             if (self.destX > self.posX - 35 and self.destX < self.posX + 35) and (self.destY > self.posY - 35 and self.destY < self.posY + 35 ):
-                if self.pitch_disturbance != 0 :
+                """if self.pitch_disturbance != 0 :
                     self.pitch_normalize()
                 elif self.roll_disturbance != 0 :
                     self.roll_normalize()
                 else:
-                    self.key_down(d_factor=1)
+                    self.key_down(d_factor=1)"""
+                
+                if self.accelerationNormalize(TIME):
+                    if self.ACCELEROMETER.getValues()[2] > 9.7:
+                        self.key_down(d_factor=1)
         
             elif self.destX < self.posX - 50:
                 self.key_a(a_factor=1, r_factor=-1.6)
-            
+
             elif self.destX > self.posX + 50:
                 self.key_d(d_factor=1, r_factor=-1.54)
 
@@ -452,4 +512,73 @@ class Drone_controller:
             elif self.destY > self.posY + 40:
                 self.key_s(s_factor=1, p_factor=0.05)
 
+    def accelerationNormalize(self, TIME):
+        accelarationValues = self.ACCELEROMETER.getValues()
+        if not self.timeCalculated:
+            self.normalizeTime = TIME + 0.1
+            self.timeCalculated = True
+
+        if accelarationValues[0] < -0.2:
+            # stop forward acceleration
+            if self.normalizeTime > TIME:
+                self.pitch_disturbance = -0.2
+            else:
+                self.timeCalculated = False
+                self.pitch_disturbance = 0
+            return 0
+        elif accelarationValues[0] > 0.2:
+            # stop backward acceleration
+            if self.normalizeTime > TIME:
+                self.pitch_disturbance = 0.2
+            else:
+                self.timeCalculated = False
+                self.pitch_disturbance = 0
+            return 0
+        elif accelarationValues[1] < -0.2:
+            # stop left acceleration
+            if self.normalizeTime > TIME:
+                self.roll_disturbance = -0.1
+            else:
+                self.timeCalculated = False
+                self.roll_disturbance = 0
+            return 0
+        elif accelarationValues[1] > 0.2:
+            # stop right acceleration
+            if self.normalizeTime > TIME:
+                self.roll_disturbance = 0.1
+            else:
+                self.timeCalculated = False
+                self.roll_disturbance = 0
+            return 0
+        else:
+            return 1
+
+    def landingSupport2(self, TIME): # otonomous landing using kamera and opencv qr, finds the center of qr in img and tries to centerize the qr
+        if self.retval:
+            x = [self.points[0, 0, 0], self.points[0, 1, 0], self.points[0, 2, 0], self.points[0, 3, 0]]
+            y = [self.points[0, 0, 1], self.points[0, 1, 1], self.points[0, 2, 1], self.points[0, 3, 1]]
+
+            minx = min(x)
+            maxx = max(x)
+            miny = min(y)
+            maxy = max(y)
+
+            if  (miny < 55 and maxy > 185):# top and bottom parts of qr place is near the camera heights top and bottom
+                if ( minx > 85 ) : # qr place is in the middle enough, land
+                    if self.accelerationNormalize(TIME):
+                        if self.ACCELEROMETER.getValues()[2] > 9.7:
+                            self.key_down(d_factor=1)
+                else:
+                    self.key_d(d_factor=1, r_factor=-1.54)
+
+            else:
+                if ( (self.CAMERA_HEIGHT - maxy) - miny )  > 10: # qr is closer to top
+                    self.key_w(w_factor=1, p_factor=-0.05)
                 
+                elif ( (self.CAMERA_HEIGHT - maxy) - miny )  < -10: # qr is closer to bottom
+                    self.key_s(s_factor=1, p_factor=0.05)
+                
+                else:
+                    if self.accelerationNormalize(TIME):
+                        if self.ACCELEROMETER.getValues()[2] > 9.7:
+                            self.key_down(d_factor=1)

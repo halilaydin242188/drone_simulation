@@ -32,11 +32,14 @@ print("- 'd': strafe right.")
 print("- 'a': strafe left.")
 print("- 'e': move north-east.")
 print("- 'q': move north-west.")
+print("- 'z': open-close imu control.")
+print("- 'c': open-close distance sensor control.")
 
 # Main loop
-while robot.step(dc.TIME_STEP) != -1:
-    TIME = robot.getTime()  # in seconds.
-    KEY = dc.KEYBOARD.getKey()
+while robot.step(dc.TIME_STEP) != -1: 
+    TIME = robot.getTime()  # get time in seconds.
+    KEY = dc.KEYBOARD.getKey() # get pressed keyboard key
+
     # Retrieve robot position using the sensors.
     ROLL = dc.IMU.getRollPitchYaw()[0] + math.pi / 2.0
     PITCH = dc.IMU.getRollPitchYaw()[1]
@@ -44,29 +47,26 @@ while robot.step(dc.TIME_STEP) != -1:
     ROLL_ACCELERATION = dc.GYRO.getValues()[0]
     PITCH_ACCELERATION = dc.GYRO.getValues()[1]
 
+    # Get Distance Sensors Data on every main cycle
     FV = dc.DS_FRONT.getValue()
     BV = dc.DS_BACK.getValue()
     RV = dc.DS_RIGHT.getValue()
     LV = dc.DS_LEFT.getValue()
-    DV = dc.DS_DOWN.getValue()           
+    DV = dc.DS_DOWN.getValue()    
+
+    
 
     if TIME > 2.0:
-        dc.blink_leds(TIME) # Blink the front LEDs alternatively with a 1 second rate.
-        if KEY == ord("X"):
-            if TIME % 0.5 == 0: # get image every second
+        dc.blink_leds(TIME) # Blink the front LED's alternatively with a 1 second rate.
+        if KEY == ord("X"): # hold down key 'X' to perform otonomous landing
+            if TIME % 0.25 == 0: # get image every second
                 dc.getImage()
-            dc.landingSupport()
+            dc.landingSupport2(TIME)
         else:
-            dc.checkCrash(FV, BV, RV, LV, DV)
-            dc.keyboard_control(KEY) # Control the drone using keyboard    
-        dc.camera_stabilize(ROLL_ACCELERATION, PITCH_ACCELERATION)
-
-        if TIME % 1.0 == 0:
-            print("----------------------------")
-            print(dc.retval)
-            print(dc.destX)
-            print(dc.destY)
-            
+            if dc.dsControl:
+                dc.checkCrash(FV, BV, RV, LV, DV)
+            dc.keyboard_control(KEY, TIME) # Control the drone using keyboard    
+        dc.camera_stabilize(ROLL_ACCELERATION, PITCH_ACCELERATION)            
         
     dc.motor_control(ROLL, PITCH, ALTITUDE, ROLL_ACCELERATION, PITCH_ACCELERATION)
 
